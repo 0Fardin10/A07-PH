@@ -4,41 +4,37 @@ import React, { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { signIn } from "@/lib/auth-client";
+import toast from "react-hot-toast";
 
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError("");
-
     setLoading(true);
+
     try {
-      await signIn.email(
-        {
-          email,
-          password,
-          callbackURL: "/",
-        },
-        {
-          onRequest: () => setLoading(true),
-          onSuccess: () => {
-            setLoading(false);
-            router.push("/");
-          },
-          onError: (ctx) => {
-            setLoading(false);
-            setError(ctx.error.message || "ইমেইল বা পাসওয়ার্ড ভুল হয়েছে!");
-          },
-        }
-      );
+      const res = await signIn.email({
+        email,
+        password,
+        callbackURL: "/",
+      });
+
+      if (res.error) {
+        toast.error(res.error.message || "ইমেইল বা পাসওয়ার্ড ভুল হয়েছে!");
+      } else {
+        toast.success("লগইন সফল হয়েছে!");
+        router.push("/");
+        router.refresh();
+      }
     } catch (err: any) {
+      console.error("Login Error:", err);
+      toast.error("লগইন করতে সমস্যা হয়েছে। দয়া করে আবার চেষ্টা করুন।");
+    } finally {
       setLoading(false);
-      setError("কোনো একটি সমস্যা হয়েছে। আবার চেষ্টা করুন।");
     }
   };
 
@@ -48,14 +44,15 @@ export default function LoginPage() {
         provider,
         callbackURL: "/",
       });
+      toast.success(`${provider === "google" ? "গুগল" : "গিটহাব"} দিয়ে সাইন ইন সফল হয়েছে!`);
     } catch (err) {
-      console.error(`${provider} login failed`, err);
+      console.error(`${provider} social login failed:`, err);
+      toast.error(`${provider} দিয়ে সাইন ইন করা সম্ভব হয়নি।`);
     }
   };
 
   return (
     <div className="min-h-screen bg-[#EFF2EF] flex flex-col items-center justify-center p-4 font-sans text-gray-800">
-      {/* Header */}
       <div className="text-center space-y-1 mb-6">
         <h1 className="text-2xl font-black text-gray-900">সাইন ইন</h1>
         <p className="text-gray-500 text-sm">
@@ -63,16 +60,8 @@ export default function LoginPage() {
         </p>
       </div>
 
-      {/* Main Card */}
       <div className="bg-white rounded-[28px] p-6 sm:p-8 w-full max-w-md shadow-sm border border-gray-100/80 space-y-5">
-        {error && (
-          <div className="bg-rose-50 text-rose-600 text-xs font-semibold p-3 rounded-xl border border-rose-100 text-center">
-            {error}
-          </div>
-        )}
-
         <form onSubmit={handleLogin} className="space-y-4">
-          {/* Email Field */}
           <div className="space-y-1.5">
             <label className="text-sm font-bold text-gray-800 block">ইমেইল</label>
             <input
@@ -84,7 +73,6 @@ export default function LoginPage() {
             />
           </div>
 
-          {/* Password Field */}
           <div className="space-y-1.5">
             <label className="text-sm font-bold text-gray-800 block">পাসওয়ার্ড</label>
             <input
@@ -96,7 +84,6 @@ export default function LoginPage() {
             />
           </div>
 
-          {/* Submit Button */}
           <button
             type="submit"
             disabled={loading}
@@ -106,17 +93,15 @@ export default function LoginPage() {
           </button>
         </form>
 
-        {/* Divider */}
         <div className="relative flex items-center justify-center my-4">
           <div className="border-t border-gray-200 w-full"></div>
           <span className="bg-white px-3 text-xs text-gray-400 font-medium absolute">অথবা</span>
         </div>
 
-        {/* Social Buttons */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <button
-            onClick={() => handleSocialLogin("google")}
             type="button"
+            onClick={() => handleSocialLogin("google")}
             className="flex items-center justify-center gap-2 border border-gray-200 bg-white hover:bg-gray-50 rounded-xl py-2.5 px-3 text-xs font-bold text-gray-700 transition"
           >
             <svg className="w-4 h-4" viewBox="0 0 24 24">
@@ -129,8 +114,8 @@ export default function LoginPage() {
           </button>
 
           <button
-            onClick={() => handleSocialLogin("github")}
             type="button"
+            onClick={() => handleSocialLogin("github")}
             className="flex items-center justify-center gap-2 border border-gray-200 bg-white hover:bg-gray-50 rounded-xl py-2.5 px-3 text-xs font-bold text-gray-700 transition"
           >
             <svg className="w-4 h-4 text-gray-900 fill-current" viewBox="0 0 24 24">
@@ -140,7 +125,6 @@ export default function LoginPage() {
           </button>
         </div>
 
-        {/* Bottom Link */}
         <p className="text-center text-xs font-semibold text-gray-600 pt-2">
           অ্যাকাউন্ট নেই?{" "}
           <Link href="/register" className="text-emerald-700 hover:underline">
@@ -149,7 +133,6 @@ export default function LoginPage() {
         </p>
       </div>
 
-      {/* Back to Home Link */}
       <Link
         href="/"
         className="text-xs font-semibold text-gray-500 hover:text-gray-800 transition mt-6"

@@ -1,5 +1,6 @@
 import Navbar from "@/components/Navbar";
 import "./globals.css";
+import { Toaster } from "react-hot-toast";
 
 export default function RootLayout({
   children,
@@ -8,9 +9,11 @@ export default function RootLayout({
 }) {
   return (
     <html lang="bn">
-      <body className="min-h-screen flex flex-col bg-gray-50">
+      <body>
+        {/* Global Toaster Container */}
+        <Toaster position="top-center" reverseOrder={false} />
         <Navbar />
-        <main className="flex-1">{children}</main>
+        {children}
       </body>
     </html>
   );
