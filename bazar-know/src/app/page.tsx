@@ -2,7 +2,9 @@
 
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
-import { Scale, Search } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useSession } from "@/lib/auth-client";
+import { Scale, Search, Lock, LogIn, UserPlus, X } from "lucide-react";
 
 // Product interface matching API schema
 interface Product {
@@ -42,10 +44,14 @@ const getUnitText = (unit: string) => {
 };
 
 export default function HomePage() {
+  const router = useRouter();
+  const { data: session } = useSession();
+
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentDate, setCurrentDate] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
+  const [showAuthModal, setShowAuthModal] = useState(false);
 
   // Dynamic Date Formatting
   useEffect(() => {
@@ -77,6 +83,16 @@ export default function HomePage() {
     fetchProducts();
   }, []);
 
+  // Handle Product Card Click with Auth Check
+  const handleProductClick = (e: React.MouseEvent, productId: number) => {
+    e.preventDefault();
+    if (!session) {
+      setShowAuthModal(true);
+    } else {
+      router.push(`/product/${productId}`);
+    }
+  };
+
   // Filter products by search query
   const filteredProducts = products.filter((p) =>
     p.nameBn?.toLowerCase().includes(searchQuery.toLowerCase())
@@ -101,9 +117,9 @@ export default function HomePage() {
     const pct = product.change?.pct ?? 0;
 
     return (
-      <Link
-        href={`/product/${product.id}`}
-        className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md hover:border-emerald-200 transition-all cursor-pointer flex flex-col justify-between group"
+      <div
+        onClick={(e) => handleProductClick(e, product.id)}
+        className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md hover:border-emerald-200 transition-all cursor-pointer flex flex-col justify-between group select-none"
       >
         <div className="flex items-start gap-3.5">
           {/* Emoji / Illustration */}
@@ -131,7 +147,7 @@ export default function HomePage() {
             </span>
           </div>
 
-          {/* Change Badge (Green Up, Red Down, Gray Flat) */}
+          {/* Change Badge */}
           {isUp ? (
             <span className="inline-flex items-center gap-0.5 bg-emerald-50 text-emerald-600 text-xs font-bold px-2.5 py-1 rounded-lg">
               ▲ {toBnNum(pct)}%
@@ -146,28 +162,31 @@ export default function HomePage() {
             </span>
           )}
         </div>
-      </Link>
+      </div>
     );
   };
 
   return (
-    <div className="bg-[#EFF2EF] min-h-screen py-8 px-4 sm:px-6 lg:px-8 font-sans">
+    <div className="bg-[#EFF2EF] min-h-screen py-8 px-4 sm:px-6 lg:px-8 font-sans relative">
       <div className="max-w-7xl mx-auto space-y-12">
 
-        {/* 1. Hero / Main Header Card */}
-        <div className="bg-white rounded-[28px] p-6 sm:p-10 border border-gray-100 shadow-sm">
+        {/* 1. Hero Card with /bazar-hero.png on the right */}
+        <div className="bg-white rounded-[28px] p-6 sm:p-10 border border-gray-100/80 shadow-sm">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
             
             {/* Left Content */}
             <div className="lg:col-span-8 space-y-5">
+              {/* Date Badge */}
               <div className="inline-block bg-[#E8F3ED] text-[#2D7A53] text-xs font-semibold px-4 py-1.5 rounded-full">
                 {currentDate || "তারিখ লোড হচ্ছে..."}
               </div>
 
+              {/* Main Heading */}
               <h1 className="text-3xl sm:text-4xl font-extrabold text-[#111827] tracking-tight">
                 আজকের বাজারের দাম এক নজরে
               </h1>
 
+              {/* Description Subtitle */}
               <p className="text-gray-500 text-sm sm:text-base leading-relaxed max-w-2xl">
                 চাল, ডাল, তেল, সবজি, মাছ, মাংস, ডিম ও মসলার দাম — বাজারভিত্তিক বিস্তারিত, গড়, সর্বনিম্ন-সর্বোচ্চ এবং দামের পরিবর্তন এক জায়গায়।
               </p>
@@ -199,33 +218,13 @@ export default function HomePage() {
               </div>
             </div>
 
-            {/* Right Side Stats Box */}
-            <div className="lg:col-span-4 bg-[#F2F6F3] border border-emerald-100/50 rounded-2xl p-5">
-              <div className="grid grid-cols-3 gap-2 text-center divide-x divide-gray-200/60">
-                <div className="px-1">
-                  <p className="text-xs text-gray-500 font-medium">পণ্য</p>
-                  <p className="text-2xl sm:text-3xl font-extrabold text-[#1E7D4E] my-1">
-                    {loading ? "..." : toBnNum(products.length)}
-                  </p>
-                  <p className="text-[11px] text-gray-500">টি নিত্যদিনের পণ্য</p>
-                </div>
-
-                <div className="px-1">
-                  <p className="text-xs text-gray-500 font-medium">বাজার</p>
-                  <p className="text-2xl sm:text-3xl font-extrabold text-[#1E7D4E] my-1">
-                    {toBnNum(12)}
-                  </p>
-                  <p className="text-[11px] text-gray-500">টি বাজার অন্তর্ভুক্ত</p>
-                </div>
-
-                <div className="px-1">
-                  <p className="text-xs text-gray-500 font-medium">বিভাগ</p>
-                  <p className="text-2xl sm:text-3xl font-extrabold text-[#1E7D4E] my-1">
-                    {toBnNum(6)}
-                  </p>
-                  <p className="text-[11px] text-gray-500">টি বিভাগের তথ্য</p>
-                </div>
-              </div>
+            {/* Right Hero Image */}
+            <div className="lg:col-span-4 flex items-center justify-center p-2">
+              <img
+                src="/bazar-hero.png"
+                alt="বাজার দর হিরো"
+                className="max-h-56 w-auto object-contain"
+              />
             </div>
 
           </div>
@@ -312,6 +311,55 @@ export default function HomePage() {
         </section>
 
       </div>
+
+      {/* Auth Guard Alert Modal */}
+      {showAuthModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl border border-gray-100 relative space-y-5 text-center">
+            
+            {/* Close Button */}
+            <button
+              onClick={() => setShowAuthModal(false)}
+              className="absolute top-4 right-4 p-2 rounded-full text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            {/* Lock Icon */}
+            <div className="w-16 h-16 bg-amber-50 rounded-2xl border border-amber-100 flex items-center justify-center mx-auto text-amber-600">
+              <Lock className="w-8 h-8" />
+            </div>
+
+            {/* Title & Message */}
+            <div className="space-y-2">
+              <h3 className="text-xl font-extrabold text-gray-900">লগইন প্রয়োজন</h3>
+              <p className="text-sm text-gray-500 leading-relaxed">
+                পণ্যের বাজারভিত্তিক বিস্তারিত তথ্য, গড় দাম ও ওঠানামা দেখতে অনুগ্রহ করে একাউন্ট দিয়ে সাইন ইন বা সাইন আপ করুন।
+              </p>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="grid grid-cols-2 gap-3 pt-2">
+              <Link
+                href="/login"
+                className="flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 px-4 rounded-xl text-sm transition shadow-sm"
+              >
+                <LogIn className="w-4 h-4" />
+                <span>সাইন ইন</span>
+              </Link>
+
+              <Link
+                href="/register"
+                className="flex items-center justify-center gap-2 border border-emerald-600 text-emerald-700 hover:bg-emerald-50 font-bold py-3 px-4 rounded-xl text-sm transition"
+              >
+                <UserPlus className="w-4 h-4" />
+                <span>সাইন আপ</span>
+              </Link>
+            </div>
+
+          </div>
+        </div>
+      )}
     </div>
   );
 }
