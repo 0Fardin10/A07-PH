@@ -1,365 +1,443 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useSession } from "@/lib/auth-client";
-import { Scale, Search, Lock, LogIn, UserPlus, X } from "lucide-react";
+import { Search, Lock, LogIn, UserPlus, X, Scale, ChevronDown } from "lucide-react";
 
-// Product interface matching API schema
+type SortOption = "default" | "lowToHigh" | "highToLow";
+
 interface Product {
-  id: number;
+  id: string | number;
   slug: string;
   nameBn: string;
   category: string;
-  categoryNameBn: string;
-  categoryIcon?: string;
   unit: string;
-  image?: string;
   today: number;
-  yesterday: number;
-  lastWeek: number;
-  lastMonth: number;
-  change: {
+  yesterday?: number;
+  emoji?: string;
+  image?: string;
+  change?: {
     dir: "up" | "down" | "flat" | string;
     pct: number;
   };
 }
 
-// Convert numbers to Bengali digits with comma formatting
 const toBnNum = (num: number | string) => {
-  if (num === undefined || num === null) return "০";
+  if (num === undefined || num === null || isNaN(Number(num))) return "০";
+  if (typeof num === "number" && !Number.isInteger(num)) {
+    return num.toLocaleString("bn-BD", { minimumFractionDigits: 1, maximumFractionDigits: 2 });
+  }
   return Number(num).toLocaleString("bn-BD");
 };
 
-// Format unit to proper Bangla unit string
-const getUnitText = (unit: string) => {
-  if (!unit) return "প্রতি ইউনিট";
-  const u = unit.toLowerCase().trim();
-  if (u === "kg" || u === "কেজি") return "প্রতি কেজি";
-  if (u === "l" || u === "লিটার") return "প্রতি লিটার";
-  if (u === "dozen" || u === "ডজন") return "প্রতি ডজন";
-  if (u === "pcs" || u === "piece" || u === "পিস") return "প্রতি পিস";
-  return `প্রতি ${unit}`;
+// Convert Bengali numerals to standard numbers for safe numeric sorting
+const parseNumericValue = (val: unknown): number => {
+  if (typeof val === "number") return val;
+  if (!val) return 0;
+  const bnToEnMap: Record<string, string> = {
+    "০": "0", "১": "1", "২": "2", "৩": "3", "৪": "4",
+    "৫": "5", "৬": "6", "৭": "7", "৮": "8", "৯": "9"
+  };
+  const converted = String(val).replace(/[০-৯]/g, (match) => bnToEnMap[match] || match);
+  return parseFloat(converted) || 0;
 };
 
-export default function HomePage() {
+const getEmoji = (p: Product) => {
+  if (p.emoji && p.emoji !== "🍚" && p.emoji !== "🛒") return p.emoji;
+  if (p.image && !p.image.startsWith("http")) return p.image;
+
+  const text = `${p.nameBn} ${p.category}`.toLowerCase();
+  if (text.includes("পেঁয়াজ") || text.includes("onion")) return "🧅";
+  if (text.includes("আদা") || text.includes("ginger")) return "🫚";
+  if (text.includes("রসুন") || text.includes("garlic")) return "🧄";
+  if (text.includes("আলু") || text.includes("potato")) return "🥔";
+  if (text.includes("টমেটো") || text.includes("tomato")) return "🍅";
+  if (text.includes("মরিচ") || text.includes("chili")) return "🌶️";
+  if (text.includes("বেগুন") || text.includes("brinjal")) return "🍆";
+  if (text.includes("ডিম") || text.includes("egg")) return "🥚";
+  if (text.includes("দুধ") || text.includes("milk")) return "🥛";
+  if (text.includes("তেল") || text.includes("oil")) return "🛢️";
+  if (text.includes("মাছ") || text.includes("fish")) return "🐟";
+  if (text.includes("মাংস") || text.includes("chicken") || text.includes("beef")) return "🍗";
+  if (text.includes("ডাল") || text.includes("lentil")) return "🫘";
+  if (text.includes("চাল") || text.includes("rice")) return "🍚";
+
+  return "🥬";
+};
+
+function HomeContent() {
   const router = useRouter();
   const { data: session } = useSession();
 
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
-  const [currentDate, setCurrentDate] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
+  const [sortBy, setSortBy] = useState<SortOption>("default");
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const [showAllProducts, setShowAllProducts] = useState(false);
 
-  // Dynamic Date Formatting
-  useEffect(() => {
-    const today = new Date();
-    const formatted = today.toLocaleDateString("bn-BD", {
-      weekday: "long",
-      day: "numeric",
-      month: "long",
-      year: "numeric",
-    });
-    setCurrentDate(formatted);
-  }, []);
-
-  // Fetch Products from API
   useEffect(() => {
     async function fetchProducts() {
       try {
+        setLoading(true);
         const res = await fetch("https://openapi.programming-hero.com/api/bazardor/products");
         const data = await res.json();
-        const rawProducts: Product[] = Array.isArray(data) ? data : data.data || data.products || [];
-        setProducts(rawProducts);
-      } catch (error) {
-        console.error("Failed to fetch products:", error);
+        const list = Array.isArray(data) ? data : data.data || [];
+        setProducts(list);
+      } catch (err) {
+        console.error("Error fetching products:", err);
       } finally {
         setLoading(false);
       }
     }
-
     fetchProducts();
   }, []);
 
-  // Handle Product Card Click with Auth Check
-  const handleProductClick = (e: React.MouseEvent, productId: number) => {
-    e.preventDefault();
-    if (!session) {
-      setShowAuthModal(true);
+  const checkIsLoggedIn = () => {
+    if (typeof window === "undefined") return false;
+    const localUser = localStorage.getItem("bazardor_user");
+    return Boolean(session?.user) || Boolean(localUser);
+  };
+
+  const handleProductClick = (slug: string) => {
+    if (checkIsLoggedIn()) {
+      router.push(`/product/${slug}`);
     } else {
-      router.push(`/product/${productId}`);
+      setShowAuthModal(true);
     }
   };
 
-  // Filter products by search query
-  const filteredProducts = products.filter((p) =>
-    p.nameBn?.toLowerCase().includes(searchQuery.toLowerCase())
+  let filteredProducts = products.filter((p) =>
+    p.nameBn.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  // Section A: Top 6 Risers
-  const topRisers = [...filteredProducts]
-    .filter((p) => p.change?.dir === "up")
-    .sort((a, b) => (b.change?.pct || 0) - (a.change?.pct || 0))
-    .slice(0, 6);
+  // Sorting Logic (Numeric Sort for Prices)
+  if (sortBy === "lowToHigh") {
+    filteredProducts = [...filteredProducts].sort((a, b) => parseNumericValue(a.today) - parseNumericValue(b.today));
+  } else if (sortBy === "highToLow") {
+    filteredProducts = [...filteredProducts].sort((a, b) => parseNumericValue(b.today) - parseNumericValue(a.today));
+  }
 
-  // Section B: Top 6 Fallers
-  const topFallers = [...filteredProducts]
-    .filter((p) => p.change?.dir === "down")
-    .sort((a, b) => (b.change?.pct || 0) - (a.change?.pct || 0))
-    .slice(0, 6);
-
-  // Reusable Product Card Component
-  const ProductCard = ({ product }: { product: Product }) => {
-    const isUp = product.change?.dir === "up";
-    const isDown = product.change?.dir === "down";
-    const pct = product.change?.pct ?? 0;
-
-    return (
-      <div
-        onClick={(e) => handleProductClick(e, product.id)}
-        className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md hover:border-emerald-200 transition-all cursor-pointer flex flex-col justify-between group select-none"
-      >
-        <div className="flex items-start gap-3.5">
-          {/* Emoji / Illustration */}
-          <div className="w-12 h-12 rounded-xl bg-[#F2F7F4] flex items-center justify-center text-2xl shrink-0 group-hover:scale-105 transition-transform">
-            {product.image || product.categoryIcon || "🛒"}
-          </div>
-
-          {/* Product Name & Unit Line */}
-          <div>
-            <h3 className="font-bold text-gray-900 text-base leading-snug group-hover:text-emerald-700 transition-colors">
-              {product.nameBn}
-            </h3>
-            <p className="text-xs text-gray-400 font-medium mt-0.5">
-              {getUnitText(product.unit)}
-            </p>
-          </div>
-        </div>
-
-        {/* Price Row */}
-        <div className="mt-4 pt-3 border-t border-gray-50 flex items-end justify-between">
-          <div>
-            <span className="text-[11px] text-gray-400 block font-medium">আজকের দাম</span>
-            <span className="text-base sm:text-lg font-extrabold text-gray-900">
-              {toBnNum(product.today)} টাকা
-            </span>
-          </div>
-
-          {/* Change Badge */}
-          {isUp ? (
-            <span className="inline-flex items-center gap-0.5 bg-emerald-50 text-emerald-600 text-xs font-bold px-2.5 py-1 rounded-lg">
-              ▲ {toBnNum(pct)}%
-            </span>
-          ) : isDown ? (
-            <span className="inline-flex items-center gap-0.5 bg-rose-50 text-rose-600 text-xs font-bold px-2.5 py-1 rounded-lg">
-              ▼ {toBnNum(pct)}%
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-0.5 bg-gray-100 text-gray-500 text-xs font-bold px-2.5 py-1 rounded-lg">
-              — {toBnNum(pct)}%
-            </span>
-          )}
-        </div>
-      </div>
-    );
-  };
+  const priceUpProducts = filteredProducts.filter((p) => p.change?.dir === "up");
+  const priceDownProducts = filteredProducts.filter((p) => p.change?.dir === "down");
+  const priceFlatProducts = filteredProducts.filter((p) => p.change?.dir !== "up" && p.change?.dir !== "down");
 
   return (
-    <div className="bg-[#EFF2EF] min-h-screen py-8 px-4 sm:px-6 lg:px-8 font-sans relative">
-      <div className="max-w-7xl mx-auto space-y-12">
-
-        {/* 1. Hero Card with /bazar-hero.png on the right */}
-        <div className="bg-white rounded-[28px] p-6 sm:p-10 border border-gray-100/80 shadow-sm">
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
+    <div className="min-h-screen bg-[#EFF2EF] py-8 px-4 sm:px-6 lg:px-8 font-sans text-gray-800">
+      <div className="max-w-6xl mx-auto space-y-8">
+        
+        {/* Banner Section */}
+        <div className="bg-white rounded-[28px] p-6 sm:p-10 border border-gray-100/90 shadow-2xs flex flex-col md:flex-row items-center justify-between gap-6">
+          <div className="space-y-4 max-w-xl text-center md:text-left">
+            <h1 className="text-2xl sm:text-3xl font-black text-gray-900 leading-tight">
+              আজকের বাজারের দাম এক নজরে
+            </h1>
+            <p className="text-xs sm:text-sm text-gray-500 font-medium leading-relaxed">
+              চাল, ডাল, তেল, সবজি, মাছ, মাংস, ডিম ও মসলার দাম — বাজারভিত্তিক বিস্তারিত, গড়, সর্বনিম্ন-সর্বোচ্চ এবং দামের পরিবর্তন এক জায়গায়।
+            </p>
             
-            {/* Left Content */}
-            <div className="lg:col-span-8 space-y-5">
-              {/* Date Badge */}
-              <div className="inline-block bg-[#E8F3ED] text-[#2D7A53] text-xs font-semibold px-4 py-1.5 rounded-full">
-                {currentDate || "তারিখ লোড হচ্ছে..."}
-              </div>
+            {/* Search, Sort Dropdown & Buttons */}
+            <div className="pt-2 flex flex-wrap items-center gap-3 justify-center md:justify-start">
+              <button
+                type="button"
+                onClick={() => setShowAllProducts((showAll) => !showAll)}
+                aria-pressed={showAllProducts}
+                className={`inline-flex items-center justify-center gap-1.5 border px-3.5 py-2 rounded-xl text-xs font-bold transition ${
+                  showAllProducts
+                    ? "bg-emerald-700 text-white border-emerald-700"
+                    : "bg-gray-50 hover:bg-gray-100 text-gray-700 border-gray-200"
+                }`}
+              >
+                <span>{showAllProducts ? "দামের পরিবর্তন" : "সব পণ্য"}</span>
+              </button>
+              
+              <button
+                type="button"
+                className="inline-flex items-center justify-center gap-1.5 bg-gray-50 hover:bg-gray-100 text-gray-700 border border-gray-200 px-3.5 py-2 rounded-xl text-xs font-bold transition"
+              >
+                <Scale className="w-4 h-4 text-emerald-700" />
+                <span>বাজার তুলনা</span>
+              </button>
 
-              {/* Main Heading */}
-              <h1 className="text-3xl sm:text-4xl font-extrabold text-[#111827] tracking-tight">
-                আজকের বাজারের দাম এক নজরে
-              </h1>
-
-              {/* Description Subtitle */}
-              <p className="text-gray-500 text-sm sm:text-base leading-relaxed max-w-2xl">
-                চাল, ডাল, তেল, সবজি, মাছ, মাংস, ডিম ও মসলার দাম — বাজারভিত্তিক বিস্তারিত, গড়, সর্বনিম্ন-সর্বোচ্চ এবং দামের পরিবর্তন এক জায়গায়।
-              </p>
-
-              {/* Action Buttons & Search */}
-              <div className="flex flex-wrap items-center gap-3 pt-2">
-                <a
-                  href="#সব-পণ্য"
-                  className="border border-emerald-600 hover:bg-emerald-50 text-emerald-700 font-semibold px-5 py-2.5 rounded-xl text-sm transition"
-                >
-                  সব পণ্য
-                </a>
-
-                <button className="flex items-center gap-2 border border-gray-300 hover:bg-gray-50 text-gray-700 font-semibold px-5 py-2.5 rounded-xl text-sm transition">
-                  <Scale className="w-4 h-4 text-gray-600" />
-                  <span>বাজার তুলনা</span>
-                </button>
-
-                <div className="relative flex-1 min-w-[200px] max-w-xs">
-                  <input
-                    type="text"
-                    placeholder="পণ্য খুঁজুন..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition"
-                  />
-                  <Search className="w-4 h-4 text-gray-400 absolute left-3 top-3" />
+              {/* Sort Dropdown with Chevron Icon */}
+              <div className="relative inline-flex items-center">
+                <span className="text-xs font-bold text-gray-500 mr-2">সাজান:</span>
+                <div className="relative">
+                  <select
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value as SortOption)}
+                    className="appearance-none bg-white border border-gray-200 rounded-xl pl-3 pr-8 py-2 text-xs font-bold text-gray-700 focus:outline-none focus:ring-2 focus:ring-emerald-600/20 cursor-pointer shadow-xs"
+                  >
+                    <option value="default">ডিফল্ট</option>
+                    <option value="lowToHigh">দাম: কম থেকে বেশি</option>
+                    <option value="highToLow">দাম: বেশি থেকে কম</option>
+                  </select>
+                  <ChevronDown className="w-4 h-4 text-gray-500 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                 </div>
               </div>
-            </div>
 
-            {/* Right Hero Image */}
-            <div className="lg:col-span-4 flex items-center justify-center p-2">
-              <img
-                src="/bazar-hero.png"
-                alt="বাজার দর হিরো"
-                className="max-h-56 w-auto object-contain"
-              />
+              <div className="relative w-full sm:w-52">
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="পণ্য খুঁজুন..."
+                  className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-3 pr-8 py-2 text-xs font-semibold text-gray-900 focus:outline-none focus:ring-2 focus:ring-emerald-600/20 transition"
+                />
+                <Search className="w-4 h-4 text-gray-400 absolute right-2.5 top-1/2 -translate-y-1/2" />
+              </div>
             </div>
+          </div>
 
+          <div className="w-40 sm:w-56 shrink-0 flex justify-center">
+            <Image
+              src="/bazar-hero.png"
+              alt="বাজার দর"
+              width={220}
+              height={220}
+              priority
+              className="w-full h-auto object-contain"
+            />
           </div>
         </div>
 
-        {/* SECTION A — “আজ দাম বেড়েছে ▲” (Top 6 Risers) */}
-        <section className="space-y-4">
-          <div className="flex items-center gap-2">
-            <span className="text-emerald-600 font-bold text-base">▲</span>
-            <h2 className="text-lg font-bold text-gray-900">আজ দাম বেড়েছে</h2>
+        {/* Loading Skeleton */}
+        {loading && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-5 animate-pulse">
+            {[1, 2, 3, 4, 5, 6].map((i) => (
+              <div key={i} className="bg-white rounded-2xl p-5 h-36 border border-gray-100"></div>
+            ))}
           </div>
+        )}
 
-          {loading ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {[1, 2, 3, 4, 5, 6].map((i) => (
-                <div key={i} className="bg-white p-5 rounded-2xl border border-gray-100 h-32 animate-pulse"></div>
+        {!loading && showAllProducts && (
+          <section className="space-y-4" aria-label="সব পণ্য">
+            <h2 className="text-base sm:text-lg font-black text-gray-900">
+              সব পণ্য ({toBnNum(filteredProducts.length)})
+            </h2>
+            {filteredProducts.length > 0 ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-5">
+                {filteredProducts.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => handleProductClick(p.slug)}
+                    className="bg-white rounded-2xl p-5 border border-gray-100 shadow-2xs hover:shadow-md transition cursor-pointer text-left flex flex-col justify-between group space-y-4"
+                  >
+                    <div className="flex items-start gap-3">
+                      <span className="text-3xl">{getEmoji(p)}</span>
+                      <div>
+                        <h3 className="font-bold text-sm text-gray-900 group-hover:text-emerald-700 transition">
+                          {p.nameBn}
+                        </h3>
+                        <p className="text-[11px] text-gray-400 font-medium mt-0.5">
+                          {p.unit || "প্রতি কেজি"}
+                        </p>
+                      </div>
+                    </div>
+                    <div>
+                      <span className="text-[11px] text-gray-400 font-medium block mb-1">আজকের দাম</span>
+                      <div className="flex items-baseline justify-between">
+                        <div className="text-base font-black text-gray-900">
+                          {toBnNum(p.today)} <span className="text-xs font-bold">টাকা</span>
+                        </div>
+                        <span className="inline-flex items-center gap-0.5 text-[11px] font-bold text-gray-600 bg-gray-100 px-2 py-0.5 rounded-md">
+                          {p.change?.dir === "up" ? "▲" : p.change?.dir === "down" ? "▼" : "—"}{" "}
+                          {toBnNum(Math.abs(p.change?.pct || 0))}%
+                        </span>
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <p className="rounded-2xl bg-white p-6 text-sm font-medium text-gray-500 border border-gray-100">
+                কোনো পণ্য পাওয়া যায়নি।
+              </p>
+            )}
+          </section>
+        )}
+
+        {/* Price Up Section */}
+        {!loading && !showAllProducts && priceUpProducts.length > 0 && (
+          <div className="space-y-4">
+            <h2 className="text-base sm:text-lg font-black text-gray-900 flex items-center gap-2">
+              <span className="text-rose-600 text-sm">▲</span> আজ দাম বেড়েছে
+            </h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-5">
+              {priceUpProducts.map((p) => (
+                <div
+                  key={p.id}
+                  onClick={() => handleProductClick(p.slug)}
+                  className="bg-white rounded-2xl p-5 border border-gray-100 shadow-2xs hover:shadow-md transition cursor-pointer flex flex-col justify-between group space-y-4"
+                >
+                  <div className="flex items-start gap-3">
+                    <span className="text-3xl">{getEmoji(p)}</span>
+                    <div>
+                      <h3 className="font-bold text-sm text-gray-900 group-hover:text-emerald-700 transition">
+                        {p.nameBn}
+                      </h3>
+                      <p className="text-[11px] text-gray-400 font-medium mt-0.5">
+                        {p.unit || "প্রতি কেজি"}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <span className="text-[11px] text-gray-400 font-medium block mb-1">আজকের দাম</span>
+                    <div className="flex items-baseline justify-between">
+                      <div className="text-base font-black text-gray-900">
+                        {toBnNum(p.today)} <span className="text-xs font-bold">টাকা</span>
+                      </div>
+                      <span className="inline-flex items-center gap-0.5 text-[11px] font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded-md border border-rose-100">
+                        ▲ {toBnNum(p.change?.pct || 0)}%
+                      </span>
+                    </div>
+                  </div>
+                </div>
               ))}
             </div>
-          ) : topRisers.length === 0 ? (
-            <p className="text-sm text-gray-500 bg-white p-4 rounded-2xl border border-gray-100">
-              আজ কোনো পণ্যের দাম বাড়েনি।
-            </p>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {topRisers.map((product) => (
-                <ProductCard key={product.id} product={product} />
-              ))}
-            </div>
-          )}
-        </section>
-
-        {/* SECTION B — “আজ দাম কমেছে ▼” (Top 6 Fallers) */}
-        <section className="space-y-4">
-          <div className="flex items-center gap-2">
-            <span className="text-rose-600 font-bold text-base">▼</span>
-            <h2 className="text-lg font-bold text-gray-900">আজ দাম কমেছে</h2>
           </div>
+        )}
 
-          {loading ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {[1, 2, 3, 4, 5, 6].map((i) => (
-                <div key={i} className="bg-white p-5 rounded-2xl border border-gray-100 h-32 animate-pulse"></div>
+        {/* Price Down Section */}
+        {!loading && !showAllProducts && priceDownProducts.length > 0 && (
+          <div className="space-y-4">
+            <h2 className="text-base sm:text-lg font-black text-gray-900 flex items-center gap-2">
+              <span className="text-emerald-600 text-sm">▼</span> আজ দাম কমেছে
+            </h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-5">
+              {priceDownProducts.map((p) => (
+                <div
+                  key={p.id}
+                  onClick={() => handleProductClick(p.slug)}
+                  className="bg-white rounded-2xl p-5 border border-gray-100 shadow-2xs hover:shadow-md transition cursor-pointer flex flex-col justify-between group space-y-4"
+                >
+                  <div className="flex items-start gap-3">
+                    <span className="text-3xl">{getEmoji(p)}</span>
+                    <div>
+                      <h3 className="font-bold text-sm text-gray-900 group-hover:text-emerald-700 transition">
+                        {p.nameBn}
+                      </h3>
+                      <p className="text-[11px] text-gray-400 font-medium mt-0.5">
+                        {p.unit || "প্রতি কেজি"}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <span className="text-[11px] text-gray-400 font-medium block mb-1">আজকের দাম</span>
+                    <div className="flex items-baseline justify-between">
+                      <div className="text-base font-black text-gray-900">
+                        {toBnNum(p.today)} <span className="text-xs font-bold">টাকা</span>
+                      </div>
+                      <span className="inline-flex items-center gap-0.5 text-[11px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-100">
+                        ▼ {toBnNum(Math.abs(p.change?.pct || 0))}%
+                      </span>
+                    </div>
+                  </div>
+                </div>
               ))}
             </div>
-          ) : topFallers.length === 0 ? (
-            <p className="text-sm text-gray-500 bg-white p-4 rounded-2xl border border-gray-100">
-              আজ কোনো পণ্যের দাম কমেনি।
-            </p>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {topFallers.map((product) => (
-                <ProductCard key={product.id} product={product} />
-              ))}
-            </div>
-          )}
-        </section>
-
-        {/* SECTION C — “সব পণ্য” (Responsive Grid for ALL products) */}
-        <section id="সব-পণ্য" className="space-y-4 pt-4 scroll-mt-24">
-          <div>
-            <h2 className="text-xl sm:text-2xl font-bold text-gray-900">সব পণ্য</h2>
-            <p className="text-xs sm:text-sm text-gray-500 mt-1">
-              বাজারের সকল নিত্যপ্রয়োজনীয় পণ্যের তালিকা ও লাইভ দরদাম
-            </p>
           </div>
+        )}
 
-          {loading ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6">
-              {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
-                <div key={i} className="bg-white p-5 rounded-2xl border border-gray-100 h-36 animate-pulse"></div>
+        {/* Flat Section */}
+        {!loading && !showAllProducts && priceFlatProducts.length > 0 && (
+          <div className="space-y-4">
+            <h2 className="text-base sm:text-lg font-black text-gray-900">
+              অন্যান্য পণ্য
+            </h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-5">
+              {priceFlatProducts.map((p) => (
+                <div
+                  key={p.id}
+                  onClick={() => handleProductClick(p.slug)}
+                  className="bg-white rounded-2xl p-5 border border-gray-100 shadow-2xs hover:shadow-md transition cursor-pointer flex flex-col justify-between group space-y-4"
+                >
+                  <div className="flex items-start gap-3">
+                    <span className="text-3xl">{getEmoji(p)}</span>
+                    <div>
+                      <h3 className="font-bold text-sm text-gray-900 group-hover:text-emerald-700 transition">
+                        {p.nameBn}
+                      </h3>
+                      <p className="text-[11px] text-gray-400 font-medium mt-0.5">
+                        {p.unit || "প্রতি কেজি"}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <span className="text-[11px] text-gray-400 font-medium block mb-1">আজকের দাম</span>
+                    <div className="flex items-baseline justify-between">
+                      <div className="text-base font-black text-gray-900">
+                        {toBnNum(p.today)} <span className="text-xs font-bold">টাকা</span>
+                      </div>
+                      <span className="inline-flex items-center gap-0.5 text-[11px] font-medium text-gray-500 bg-gray-100 px-2 py-0.5 rounded-md">
+                        — ০.০%
+                      </span>
+                    </div>
+                  </div>
+                </div>
               ))}
             </div>
-          ) : filteredProducts.length === 0 ? (
-            <p className="text-sm text-gray-500 bg-white p-6 rounded-2xl border border-gray-100 text-center">
-              কোনো পণ্য পাওয়া যায়নি।
-            </p>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6">
-              {filteredProducts.map((product) => (
-                <ProductCard key={product.id} product={product} />
-              ))}
-            </div>
-          )}
-        </section>
+          </div>
+        )}
 
       </div>
 
-      {/* Auth Guard Alert Modal */}
+      {/* Auth Modal */}
       {showAuthModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fadeIn">
-          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl border border-gray-100 relative space-y-5 text-center">
-            
-            {/* Close Button */}
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-sm w-full shadow-2xl relative space-y-5 text-center">
             <button
               onClick={() => setShowAuthModal(false)}
-              className="absolute top-4 right-4 p-2 rounded-full text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition"
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition"
             >
               <X className="w-5 h-5" />
             </button>
 
-            {/* Lock Icon */}
-            <div className="w-16 h-16 bg-amber-50 rounded-2xl border border-amber-100 flex items-center justify-center mx-auto text-amber-600">
-              <Lock className="w-8 h-8" />
+            <div className="w-14 h-14 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mx-auto">
+              <Lock className="w-7 h-7" />
             </div>
 
-            {/* Title & Message */}
             <div className="space-y-2">
-              <h3 className="text-xl font-extrabold text-gray-900">লগইন প্রয়োজন</h3>
-              <p className="text-sm text-gray-500 leading-relaxed">
+              <h3 className="text-lg font-black text-gray-900">লগইন প্রয়োজন</h3>
+              <p className="text-xs text-gray-500 font-medium leading-relaxed">
                 পণ্যের বাজারভিত্তিক বিস্তারিত তথ্য, গড় দাম ও ওঠানামা দেখতে অনুগ্রহ করে একাউন্ট দিয়ে সাইন ইন বা সাইন আপ করুন।
               </p>
             </div>
 
-            {/* Action Buttons */}
-            <div className="grid grid-cols-2 gap-3 pt-2">
+            <div className="flex gap-3 pt-2">
               <Link
                 href="/login"
-                className="flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 px-4 rounded-xl text-sm transition shadow-sm"
+                className="flex-1 bg-[#1E7D4E] hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl text-xs flex items-center justify-center gap-1.5 transition shadow-sm"
               >
                 <LogIn className="w-4 h-4" />
                 <span>সাইন ইন</span>
               </Link>
-
               <Link
                 href="/register"
-                className="flex items-center justify-center gap-2 border border-emerald-600 text-emerald-700 hover:bg-emerald-50 font-bold py-3 px-4 rounded-xl text-sm transition"
+                className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold py-2.5 rounded-xl text-xs flex items-center justify-center gap-1.5 transition border border-gray-200"
               >
                 <UserPlus className="w-4 h-4" />
                 <span>সাইন আপ</span>
               </Link>
             </div>
-
           </div>
         </div>
       )}
     </div>
+  );
+}
+
+export default function HomePage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-[#EFF2EF] flex items-center justify-center font-bold text-gray-600">লোড হচ্ছে...</div>}>
+      <HomeContent />
+    </Suspense>
   );
 }

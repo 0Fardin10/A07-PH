@@ -1,13 +1,7 @@
-import type { Metadata } from "next";
-import { Toaster } from "react-hot-toast";
+import "./globals.css"; // <-- এই লাইনটি থাকা আবশ্যক
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-import "./globals.css";
-
-export const metadata: Metadata = {
-  title: "বাজার দর - BazarDor Marketplace",
-  description: "প্রয়োজনীয় পণ্যের দাম এক নজরে",
-};
+import { Toaster } from "react-hot-toast";
 
 export default function RootLayout({
   children,

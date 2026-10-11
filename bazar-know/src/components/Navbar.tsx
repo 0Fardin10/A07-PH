@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useRef, Suspense } from "react";
+import React, { useEffect, useState, useRef, useSyncExternalStore, Suspense } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession, signOut } from "@/lib/auth-client";
@@ -15,20 +15,46 @@ interface Category {
 }
 
 interface Product {
-  id: number;
+  id: string | number;
   nameBn: string;
-  unit: string;
-  today: number;
-  change: {
+  unit?: string;
+  today?: number | string;
+  change?: {
     dir: "up" | "down" | "flat" | string;
-    pct: number;
+    pct?: number | string;
   };
 }
 
-const toBnNum = (num: number | string) => {
-  if (num === undefined || num === null) return "০";
-  return Number(num).toLocaleString("bn-BD");
+const toBnNum = (num: number | string | undefined) => {
+  const value = Number(num);
+  return Number.isFinite(value) ? value.toLocaleString("bn-BD") : "০";
 };
+
+function getApiList<T>(payload: unknown): T[] {
+  if (Array.isArray(payload)) return payload as T[];
+  if (!payload || typeof payload !== "object") return [];
+
+  const data = payload as { data?: unknown; products?: unknown };
+  if (Array.isArray(data.data)) return data.data as T[];
+  if (Array.isArray(data.products)) return data.products as T[];
+  return [];
+}
+
+async function fetchApiList<T>(url: string, signal: AbortSignal): Promise<T[]> {
+  const response = await fetch(url, { signal });
+  if (!response.ok) throw new Error(`Request failed (${response.status})`);
+  return getApiList<T>(await response.json());
+}
+
+const subscribeToDate = () => () => {};
+const getCurrentDate = () =>
+  new Date().toLocaleDateString("bn-BD", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+const getServerDate = () => "";
 
 const DEFAULT_CATEGORIES: Category[] = [
   { id: "chal", slug: "chal", nameBn: "চাল", icon: "🍚" },
@@ -47,9 +73,9 @@ function NavbarContent() {
 
   const [categories, setCategories] = useState<Category[]>(DEFAULT_CATEGORIES);
   const [tickerProducts, setTickerProducts] = useState<Product[]>([]);
-  const [currentDate, setCurrentDate] = useState("");
+  const currentDate = useSyncExternalStore(subscribeToDate, getCurrentDate, getServerDate);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-  const [localUser, setLocalUser] = useState<{ name: string; email: string; image?: string } | null>(null);
+  const [localUser, setLocalUser] = useState<{ name?: string; email?: string; image?: string } | null>(null);
 
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -60,50 +86,80 @@ function NavbarContent() {
         setIsDropdownOpen(false);
       }
     }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  // Set Bengali Date & Local User Backup
-  useEffect(() => {
-    const today = new Date();
-    const formatted = today.toLocaleDateString("bn-BD", {
-      weekday: "long",
-      day: "numeric",
-      month: "long",
-      year: "numeric",
-    });
-    setCurrentDate(formatted);
-
-    const stored = localStorage.getItem("bazardor_user");
-    if (stored) {
-      try {
-        setLocalUser(JSON.parse(stored));
-      } catch (e) {}
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setIsDropdownOpen(false);
     }
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
   }, []);
 
-  // Fetch Categories & Products
+  // Set Bengali date and keep the local auth fallback in sync with app events.
   useEffect(() => {
-    async function fetchNavData() {
-      try {
-        const catRes = await fetch("https://openapi.programming-hero.com/api/bazardor/categories");
-        const catData = await catRes.json();
-        const rawCategories = Array.isArray(catData) ? catData : catData.data || [];
-        if (rawCategories.length > 0) {
-          setCategories(rawCategories);
-        }
+    function syncLocalUser() {
+      const stored = localStorage.getItem("bazardor_user");
+      if (!stored) {
+        setLocalUser(null);
+        return;
+      }
 
-        const prodRes = await fetch("https://openapi.programming-hero.com/api/bazardor/products");
-        const prodData = await prodRes.json();
-        const rawProducts = Array.isArray(prodData) ? prodData : prodData.data || prodData.products || [];
-        setTickerProducts(rawProducts);
-      } catch (error) {
-        console.error("Failed to fetch nav data:", error);
+      try {
+        const parsed: unknown = JSON.parse(stored);
+        if (parsed && typeof parsed === "object") {
+          const user = parsed as { name?: unknown; email?: unknown; image?: unknown };
+          setLocalUser({
+            name: typeof user.name === "string" ? user.name : undefined,
+            email: typeof user.email === "string" ? user.email : undefined,
+            image: typeof user.image === "string" ? user.image : undefined,
+          });
+          return;
+        }
+      } catch {
+        // Ignore malformed local fallback data.
+      }
+      setLocalUser(null);
+    }
+
+    syncLocalUser();
+    window.addEventListener("storage", syncLocalUser);
+    window.addEventListener("auth-change", syncLocalUser);
+    return () => {
+      window.removeEventListener("storage", syncLocalUser);
+      window.removeEventListener("auth-change", syncLocalUser);
+    };
+  }, []);
+
+  // Fetch categories and ticker data independently so one failure does not hide the other.
+  useEffect(() => {
+    const controller = new AbortController();
+
+    async function fetchNavData() {
+      const results = await Promise.allSettled([
+        fetchApiList<Category>("https://openapi.programming-hero.com/api/bazardor/categories", controller.signal),
+        fetchApiList<Product>("https://openapi.programming-hero.com/api/bazardor/products", controller.signal),
+      ]);
+
+      if (controller.signal.aborted) return;
+
+      const [categoryResult, productResult] = results;
+      if (categoryResult.status === "fulfilled" && categoryResult.value.length > 0) {
+        setCategories(categoryResult.value);
+      } else if (categoryResult.status === "rejected") {
+        console.error("Failed to fetch categories:", categoryResult.reason);
+      }
+
+      if (productResult.status === "fulfilled") {
+        setTickerProducts(productResult.value);
+      } else {
+        console.error("Failed to fetch ticker products:", productResult.reason);
       }
     }
 
     fetchNavData();
+    return () => controller.abort();
   }, []);
 
   // Logout Handler
@@ -114,15 +170,18 @@ function NavbarContent() {
         fetchOptions: {
           onSuccess: () => {
             localStorage.removeItem("bazardor_user");
+            window.dispatchEvent(new Event("storage"));
             toast.success("লগআউট সফল হয়েছে!");
-            window.location.href = "/";
+          },
+          onError: (context) => {
+            console.error("Sign-out failed:", context.error);
+            toast.error("সাইন আউট করা যায়নি। আবার চেষ্টা করুন!");
           },
         },
       });
-    } catch (e) {
-      localStorage.removeItem("bazardor_user");
-      toast.success("লগআউট সফল হয়েছে!");
-      window.location.href = "/";
+    } catch (error) {
+      console.error("Sign-out failed:", error);
+      toast.error("সাইন আউট করা যায়নি। আবার চেষ্টা করুন!");
     }
   };
 
@@ -162,6 +221,8 @@ function NavbarContent() {
               <button
                 type="button"
                 onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                aria-expanded={isDropdownOpen}
+                aria-controls="navbar-user-menu"
                 className="flex items-center gap-2 hover:opacity-80 transition cursor-pointer py-1 px-2 rounded-lg text-left"
               >
                 {activeUser.image ? (
@@ -176,19 +237,19 @@ function NavbarContent() {
                   </div>
                 )}
                 <span className="text-sm font-bold text-gray-800">
-                  {activeUser.name || activeUser.email?.split("@")[0] || "Rezwan"}
+                  {activeUser.name || activeUser.email?.split("@")[0] || "প্রোফাইল"}
                 </span>
                 <ChevronDown className={`w-3.5 h-3.5 text-gray-500 transition-transform ${isDropdownOpen ? "rotate-180" : ""}`} />
               </button>
 
               {isDropdownOpen && (
-                <div className="absolute right-0 mt-2 w-64 bg-[#FAFDFB] rounded-[22px] shadow-xl border border-gray-100/90 z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+                <div id="navbar-user-menu" className="absolute right-0 mt-2 w-64 bg-[#FAFDFB] rounded-[22px] shadow-xl border border-gray-100/90 z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
                   <div className="p-4 border-b border-gray-100/80 bg-white">
                     <h4 className="text-sm font-extrabold text-gray-900 leading-snug">
-                      {activeUser.name || "Rezwan Ahmed"}
+                      {activeUser.name || "প্রোফাইল"}
                     </h4>
                     <p className="text-xs text-gray-400 font-medium mt-0.5 truncate">
-                      {activeUser.email || "rezwanahmed@gmail.com"}
+                      {activeUser.email || ""}
                     </p>
                   </div>
 
@@ -267,7 +328,7 @@ function NavbarContent() {
             const isDown = p.change?.dir === "down";
             return (
               <div key={`${p.id}-${index}`} className="flex items-center gap-2 shrink-0">
-                <span className="font-semibold text-gray-200">{p.nameBn}</span>
+                <span className="font-semibold text-gray-200">{p.nameBn || "পণ্য"}</span>
                 <span className="text-gray-400">{toBnNum(p.today)} টা/{p.unit || "কেজি"}</span>
                 {isUp ? (
                   <span className="text-[#4ADE80] font-bold flex items-center gap-0.5">
@@ -275,7 +336,7 @@ function NavbarContent() {
                   </span>
                 ) : isDown ? (
                   <span className="text-[#F87171] font-bold flex items-center gap-0.5">
-                    ▼ -{toBnNum(Math.abs(p.change?.pct || 0))}%
+                    ▼ -{toBnNum(Math.abs(Number(p.change?.pct) || 0))}%
                   </span>
                 ) : (
                   <span className="text-gray-400 font-bold">— 0%</span>
