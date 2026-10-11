@@ -25,35 +25,26 @@ function LoginContent() {
     try {
       setLoading(true);
 
-      if (authClient?.signIn?.email) {
-        await authClient.signIn.email({ email, password });
-      }
-
-      // LocalStorage Sync
-      const userData = {
-        name: email.split("@")[0],
-        email: email,
-      };
-      localStorage.setItem("bazardor_user", JSON.stringify(userData));
-      window.dispatchEvent(new Event("storage"));
-
-      toast.success("সফলভাবে সাইন ইন করা হয়েছে!");
-      router.push("/");
-      router.refresh();
-    } catch (err: any) {
-      console.error("Login error:", err);
-
-      // Fallback save for client local state
-      const userData = {
-        name: email.split("@")[0],
-        email: email,
-      };
-      localStorage.setItem("bazardor_user", JSON.stringify(userData));
-      window.dispatchEvent(new Event("storage"));
-
-      toast.success("সফলভাবে সাইন ইন করা হয়েছে!");
-      router.push("/");
-      router.refresh();
+      await authClient.signIn.email(
+        { email, password },
+        {
+          onSuccess: () => {
+            const userData = { name: email.split("@")[0], email };
+            localStorage.setItem("bazardor_user", JSON.stringify(userData));
+            window.dispatchEvent(new Event("storage"));
+            toast.success("সফলভাবে সাইন ইন করা হয়েছে!");
+            router.push("/");
+            router.refresh();
+          },
+          onError: (context) => {
+            console.error("Login error:", context.error);
+            toast.error("ইমেইল বা পাসওয়ার্ড সঠিক নয়, আবার চেষ্টা করুন!");
+          },
+        }
+      );
+    } catch (error) {
+      console.error("Login error:", error);
+      toast.error("সাইন ইন করা যায়নি। আবার চেষ্টা করুন!");
     } finally {
       setLoading(false);
     }
@@ -63,7 +54,14 @@ function LoginContent() {
   const handleGoogleLogin = async () => {
     try {
       if (authClient?.signIn?.social) {
-        await authClient.signIn.social({ provider: "google" });
+        await authClient.signIn.social(
+          { provider: "google", callbackURL: "/" },
+          {
+            onError: ({ error }) => {
+              toast.error(error.message || "গুগল দিয়ে লগইন করা যায়নি!");
+            },
+          }
+        );
       } else {
         toast.error("গুগল সাইন ইন কনফিগার করা নেই!");
       }
@@ -77,7 +75,14 @@ function LoginContent() {
   const handleGithubLogin = async () => {
     try {
       if (authClient?.signIn?.social) {
-        await authClient.signIn.social({ provider: "github" });
+        await authClient.signIn.social(
+          { provider: "github", callbackURL: "/" },
+          {
+            onError: ({ error }) => {
+              toast.error(error.message || "গিটহাব দিয়ে লগইন করা যায়নি!");
+            },
+          }
+        );
       } else {
         toast.error("গিটহাব সাইন ইন কনফিগার করা নেই!");
       }

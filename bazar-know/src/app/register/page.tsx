@@ -40,15 +40,14 @@ function RegisterFormContent() {
             router.push("/login");
           },
           onError: (ctx) => {
-            // Local fallback for presentation
-            toast.success("নিবন্ধন সফল হয়েছে! এখন লগইন করুন।");
-            router.push("/login");
+            console.error("Registration error:", ctx.error);
+            toast.error("নিবন্ধন করা যায়নি। তথ্য যাচাই করে আবার চেষ্টা করুন!");
           },
         }
       );
-    } catch (err) {
-      toast.success("নিবন্ধন সফল হয়েছে! এখন লগইন করুন।");
-      router.push("/login");
+    } catch (error) {
+      console.error("Registration error:", error);
+      toast.error("নিবন্ধন করা যায়নি। আবার চেষ্টা করুন!");
     } finally {
       setLoading(false);
     }
@@ -61,18 +60,15 @@ function RegisterFormContent() {
       await signIn.social({
         provider,
         callbackURL: "/",
+      }, {
+        onError: ({ error }) => {
+          console.error(`${provider} sign-up error:`, error);
+          toast.error(`${provider.toUpperCase()} দিয়ে সাইনআপ করা যায়নি!`);
+        },
       });
-    } catch (err) {
-      localStorage.setItem(
-        "bazardor_user",
-        JSON.stringify({
-          name: `${provider.toUpperCase()} ইউজার`,
-          email: `user@${provider}.com`,
-        })
-      );
-      toast.success(`${provider.toUpperCase()} দিয়ে সাইনআপ সফল হয়েছে!`);
-      router.push("/");
-      router.refresh();
+    } catch (error) {
+      console.error(`${provider} sign-up error:`, error);
+      toast.error(`${provider.toUpperCase()} দিয়ে সাইনআপ করা যায়নি!`);
     } finally {
       setSocialLoading(null);
     }
