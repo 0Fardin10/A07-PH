@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, Suspense } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useSession, signOut } from "@/lib/auth-client";
 import toast from "react-hot-toast";
 import { User, ChevronDown, LogOut } from "lucide-react";
@@ -30,13 +30,23 @@ const toBnNum = (num: number | string) => {
   return Number(num).toLocaleString("bn-BD");
 };
 
-export default function Navbar() {
-  const router = useRouter();
+const DEFAULT_CATEGORIES: Category[] = [
+  { id: "chal", slug: "chal", nameBn: "চাল", icon: "🍚" },
+  { id: "dal", slug: "dal", nameBn: "ডাল", icon: "🫘" },
+  { id: "tel", slug: "tel", nameBn: "তেল", icon: "🛢️" },
+  { id: "sobji", slug: "sobji", nameBn: "সবজি", icon: "🥬" },
+  { id: "mach", slug: "mach", nameBn: "মাছ", icon: "🐟" },
+  { id: "mangsho", slug: "mangsho", nameBn: "মাংস", icon: "🍗" },
+  { id: "dim-dui", slug: "dim-dui", nameBn: "ডিম-দুধ", icon: "🥛" },
+  { id: "mosla", slug: "mosla", nameBn: "মসলা", icon: "🌶️" },
+];
+
+function NavbarContent() {
+  const pathname = usePathname();
   const { data: session, isPending } = useSession();
 
-  const [categories, setCategories] = useState<Category[]>([]);
+  const [categories, setCategories] = useState<Category[]>(DEFAULT_CATEGORIES);
   const [tickerProducts, setTickerProducts] = useState<Product[]>([]);
-  const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [currentDate, setCurrentDate] = useState("");
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [localUser, setLocalUser] = useState<{ name: string; email: string; image?: string } | null>(null);
@@ -80,7 +90,9 @@ export default function Navbar() {
         const catRes = await fetch("https://openapi.programming-hero.com/api/bazardor/categories");
         const catData = await catRes.json();
         const rawCategories = Array.isArray(catData) ? catData : catData.data || [];
-        setCategories(rawCategories);
+        if (rawCategories.length > 0) {
+          setCategories(rawCategories);
+        }
 
         const prodRes = await fetch("https://openapi.programming-hero.com/api/bazardor/products");
         const prodData = await prodRes.json();
@@ -94,7 +106,7 @@ export default function Navbar() {
     fetchNavData();
   }, []);
 
-  // 100% Reliable Logout Handler
+  // Logout Handler
   const handleLogout = async () => {
     setIsDropdownOpen(false);
     try {
@@ -119,7 +131,7 @@ export default function Navbar() {
   return (
     <header className="bg-white border-b border-gray-100 sticky top-0 z-40 shadow-sm font-sans">
       
-      {/* 1. Main Top Header */}
+      {/* Top Header */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 flex items-center justify-between gap-4">
         
         {/* Brand Logo & Date */}
@@ -141,12 +153,11 @@ export default function Navbar() {
           </Link>
         </div>
 
-        {/* Auth Area with Profile Dropdown */}
+        {/* Profile / Auth Area */}
         <div className="flex items-center gap-3 relative" ref={dropdownRef}>
           {isPending && !activeUser ? (
             <div className="h-9 w-24 bg-gray-100 rounded-xl animate-pulse"></div>
           ) : activeUser ? (
-            /* Logged-in Profile Button */
             <div className="relative">
               <button
                 type="button"
@@ -170,11 +181,8 @@ export default function Navbar() {
                 <ChevronDown className={`w-3.5 h-3.5 text-gray-500 transition-transform ${isDropdownOpen ? "rotate-180" : ""}`} />
               </button>
 
-              {/* Profile Popover Dropdown */}
               {isDropdownOpen && (
                 <div className="absolute right-0 mt-2 w-64 bg-[#FAFDFB] rounded-[22px] shadow-xl border border-gray-100/90 z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-                  
-                  {/* Dropdown Header */}
                   <div className="p-4 border-b border-gray-100/80 bg-white">
                     <h4 className="text-sm font-extrabold text-gray-900 leading-snug">
                       {activeUser.name || "Rezwan Ahmed"}
@@ -184,7 +192,6 @@ export default function Navbar() {
                     </p>
                   </div>
 
-                  {/* Dropdown Items */}
                   <div className="p-2 space-y-1">
                     <Link
                       href="/profile"
@@ -204,7 +211,6 @@ export default function Navbar() {
                       <span>সাইন আউট</span>
                     </button>
                   </div>
-
                 </div>
               )}
             </div>
@@ -228,53 +234,32 @@ export default function Navbar() {
 
       </div>
 
-      {/* 2. Category Nav Pills */}
+      {/* Category Nav Pills */}
       <div className="bg-[#FAFDFB] border-t border-gray-100">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center gap-2 overflow-x-auto py-2.5 no-scrollbar scroll-smooth">
-            {categories.length > 0 ? (
-              categories.map((cat) => {
-                const isActive = selectedCategory === cat.slug;
-                return (
-                  <button
-                    key={cat.id}
-                    onClick={() => setSelectedCategory(cat.slug)}
-                    className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-bold transition shrink-0 ${
-                      isActive
-                        ? "bg-emerald-600 text-white shadow-sm"
-                        : "bg-white text-gray-700 hover:bg-emerald-50 hover:text-emerald-700 border border-gray-200/80"
-                    }`}
-                  >
-                    <span>{cat.icon || "🛒"}</span>
-                    <span>{cat.nameBn}</span>
-                  </button>
-                );
-              })
-            ) : (
-              [
-                { name: "চাল", icon: "🍚" },
-                { name: "ডাল", icon: "🫘" },
-                { name: "তেল", icon: "🫙" },
-                { name: "সবজি", icon: "🥦" },
-                { name: "মাছ", icon: "🐟" },
-                { name: "মাংস", icon: "🍗" },
-                { name: "ডিম-দুধ", icon: "🥚" },
-                { name: "মসলা", icon: "🌶️" },
-              ].map((item, idx) => (
-                <button
-                  key={idx}
-                  className="flex items-center gap-2 bg-white border border-gray-200/80 px-3.5 py-1.5 rounded-xl text-xs font-bold text-gray-700 hover:bg-emerald-50 hover:text-emerald-700 transition shrink-0"
+            {categories.map((cat) => {
+              const isActive = pathname === `/category/${cat.slug}`;
+              return (
+                <Link
+                  key={cat.id}
+                  href={`/category/${cat.slug}`}
+                  className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-bold transition shrink-0 ${
+                    isActive
+                      ? "bg-emerald-700 text-white shadow-sm"
+                      : "bg-[#0E7A42] hover:bg-emerald-700 text-white shadow-sm"
+                  }`}
                 >
-                  <span>{item.icon}</span>
-                  <span>{item.name}</span>
-                </button>
-              ))
-            )}
+                  <span>{cat.icon || "🛒"}</span>
+                  <span>{cat.nameBn}</span>
+                </Link>
+              );
+            })}
           </div>
         </div>
       </div>
 
-      {/* 3. Ticker Bar */}
+      {/* Ticker Bar */}
       <div className="bg-[#0B1712] text-white text-xs py-2 overflow-hidden relative">
         <div className="flex items-center gap-8 whitespace-nowrap animate-marquee">
           {tickerProducts.map((p, index) => {
@@ -290,7 +275,7 @@ export default function Navbar() {
                   </span>
                 ) : isDown ? (
                   <span className="text-[#F87171] font-bold flex items-center gap-0.5">
-                    ▼ -{toBnNum(p.change?.pct || 0)}%
+                    ▼ -{toBnNum(Math.abs(p.change?.pct || 0))}%
                   </span>
                 ) : (
                   <span className="text-gray-400 font-bold">— 0%</span>
@@ -303,5 +288,13 @@ export default function Navbar() {
       </div>
 
     </header>
+  );
+}
+
+export default function Navbar() {
+  return (
+    <Suspense fallback={<div className="h-16 bg-white border-b border-gray-100"></div>}>
+      <NavbarContent />
+    </Suspense>
   );
 }
