@@ -1,37 +1,114 @@
-🧺 BazarDor (বাজার দর)দৈনিক নিত্যপ্রয়োজনীয় পণ্যের বাজার দর এক নজরে — A modern, full-stack web application designed to track, compare, and display daily commodity prices across different markets in Bangladesh.🚀 Live Site: https://a07-ph.vercel.app/📌 OverviewBazarDor (বাজার দর) provides real-time market price updates for essential daily goods like rice, lentils, oil, vegetables, fish, meat, eggs, and spices. It enables users to view minimum, maximum, and average prices across various regional markets (Carwan Bazar, Mirpur, Chittagong, Rajshahi, Khulna, Sylhet, etc.), observe daily price fluctuations, and manage their personalized user profile.✨ Key Features📊 Real-Time Price Ticker & Dynamic Category Browsing:An infinite-scrolling marquee header bar displaying live price changes with directional badges (▲ / ▼ percentage shifts). Responsive category filtering powered directly by API data with highlighted active states.🔢 Bengali-Aware Numeric Sorting (C1):Custom sorting algorithm capable of parsing Bengali numerals (০-৯) to accurately sort commodities by price (Default, Low to High, High to Low) without string-sorting bugs.🔒 Protected Detailed Product Analytics & Market Tables:Authentication-protected detail view (/product/[slug]) featuring market price breakdowns, division-wise price spans, and automated statistical calculations (Min, Max, and Average prices).🔑 Comprehensive Authentication System:Powered by BetterAuth, supporting Email/Password along with Google and GitHub social logins. Features real-time state synchronization across components without requiring full page reloads.👤 Profile Management & Information Updates (C3):Integrated profile route (/profile) with a dedicated update interface (/profile/edit) following BetterAuth's updateUser pattern to seamlessly modify user credentials with instant UI reflection.🛠️ Technologies UsedCategoryTechnology / LibraryFrameworkNext.js 16 (App Router & Turbopack)LanguageTypeScript / JavaScriptStylingTailwind CSS v4AuthenticationBetterAuth (Email/Password + OAuth)Icons & UI ToolsLucide React, Inline SVGsNotificationsReact Hot ToastDeploymentVercel🚀 Getting StartedFollow these steps to run the project locally on your machine:1. Clone the RepositoryBashgit clone https://github.com/your-username/bazardor.git
+<div align="center">
+
+# 🧺 BazarDor (বাজার দর)
+
+**দৈনিক নিত্যপ্রয়োজনীয় পণ্যের বাজার দর এক নজরে**
+
+Track, compare, and browse daily commodity prices across markets in Bangladesh.
+
+[![Live Site](https://img.shields.io/badge/Live-a07--ph.vercel.app-000000?style=for-the-badge&logo=vercel&logoColor=white)](https://a07-ph.vercel.app/)
+![Next.js](https://img.shields.io/badge/Next.js_16-000000?style=for-the-badge&logo=nextdotjs&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white)
+![Tailwind](https://img.shields.io/badge/Tailwind_v4-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white)
+![License](https://img.shields.io/badge/License-MIT-22c55e?style=for-the-badge)
+
+</div>
+
+---
+
+## 📌 Overview
+
+BazarDor shows market prices for everyday essentials like rice, lentils, oil, vegetables, fish, meat, eggs, and spices. You can check the minimum, maximum, and average price across markets (Karwan Bazar, Mirpur, Chittagong, Rajshahi, Khulna, Sylhet and more), see how prices moved today, and manage your own profile.
+
+## ✨ Features
+
+| | Feature | What it does |
+|---|---|---|
+| 📊 | **Live price ticker** | Infinite marquee in the header with ▲ / ▼ percentage changes |
+| 🗂️ | **Category browsing** | Filters driven by API data, with a highlighted active state |
+| 🔢 | **Bengali-aware sorting** | Parses Bengali numerals (০-৯) so Low → High and High → Low actually work |
+| 🔒 | **Protected product pages** | `/product/[slug]` shows market tables, division-wise spans, and Min / Max / Avg |
+| 🔑 | **Authentication** | BetterAuth with Email/Password, Google, and GitHub login |
+| 👤 | **Profile management** | `/profile` and `/profile/edit` using BetterAuth's `updateUser`, with instant UI updates |
+
+## 🛠️ Tech Stack
+
+| Category | Technology |
+|---|---|
+| Framework | Next.js 16 (App Router, Turbopack) |
+| Language | TypeScript / JavaScript |
+| Styling | Tailwind CSS v4 |
+| Auth | BetterAuth (Email/Password + OAuth) |
+| Icons | Lucide React, inline SVGs |
+| Notifications | React Hot Toast |
+| Deployment | Vercel |
+
+## 🚀 Getting Started
+
+**1. Clone the repo**
+
+```bash
+git clone https://github.com/your-username/bazardor.git
 cd bazardor
-2. Install DependenciesBashnpm install
-3. Setup Environment VariablesCreate a .env.local file in the root directory and add the following keys:Code snippetBETTER_AUTH_SECRET=your_generated_secret_key
+```
+
+**2. Install dependencies**
+
+```bash
+npm install
+```
+
+**3. Set up environment variables**
+
+Create a `.env.local` file in the root:
+
+```env
+BETTER_AUTH_SECRET=your_generated_secret_key
 BETTER_AUTH_URL=http://localhost:3000
 
-# Social Auth Credentials (Optional for local testing)
+# Social auth (optional for local testing)
 GOOGLE_CLIENT_ID=your_google_client_id
 GOOGLE_CLIENT_SECRET=your_google_client_secret
 GITHUB_CLIENT_ID=your_github_client_id
 GITHUB_CLIENT_SECRET=your_github_client_secret
-4. Run the Development ServerBashnpm run dev
-Open http://localhost:3000 in your browser to view the application.📂 Folder StructurePlaintextsrc/
+```
+
+**4. Run the dev server**
+
+```bash
+npm run dev
+```
+
+Open [http://localhost:3000](http://localhost:3000) and you're set.
+
+## 📂 Folder Structure
+
+```plaintext
+src/
 ├── app/
-│   ├── category/
-│   │   └── [slug]/
-│   │       └── page.tsx         # Dynamic category view with sorting & skeletons
-│   ├── login/
-│   │   └── page.tsx             # User Sign-In with Social Auth options
-│   ├── register/
-│   │   └── page.tsx             # User Sign-Up
-│   ├── product/
-│   │   └── [slug]/
-│   │       └── page.tsx         # Protected detailed view & market price table
+│   ├── category/[slug]/page.tsx   # Category view with sorting and skeletons
+│   ├── login/page.tsx             # Sign in with social auth
+│   ├── register/page.tsx          # Sign up
+│   ├── product/[slug]/page.tsx    # Protected product details and price table
 │   ├── profile/
-│   │   ├── edit/
-│   │   │   └── page.tsx         # Information Update route (C3)
-│   │   └── page.tsx             # Profile Overview
-│   ├── layout.tsx               # Root layout
-│   ├── not-found.tsx            # Global 404 Page
-│   └── page.tsx                 # Home Page (Hero, Riser/Faller grids, All Products)
+│   │   ├── edit/page.tsx          # Update profile info
+│   │   └── page.tsx               # Profile overview
+│   ├── layout.tsx                 # Root layout
+│   ├── not-found.tsx              # Global 404
+│   └── page.tsx                   # Home (hero, risers/fallers, all products)
 ├── components/
-│   ├── Navbar.tsx               # Top Bar, Category Strip, & Ticker Marquee
-│   └── Footer.tsx               # Footer matching Penpot/Figma design
+│   ├── Navbar.tsx                 # Top bar, category strip, ticker marquee
+│   └── Footer.tsx                 # Footer matching the Penpot/Figma design
 └── lib/
-    └── auth-client.ts           # BetterAuth client setup & helper listeners
-📄 LicenseDistributed under the MIT License. See LICENSE for more information.
+    └── auth-client.ts             # BetterAuth client setup and helpers
+```
+
+## 📄 License
+
+Distributed under the MIT License. See [`LICENSE`](LICENSE) for details.
+
+<div align="center">
+
+Made with ❤️ in Bangladesh
+
+</div>
