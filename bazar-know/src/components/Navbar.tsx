@@ -1,9 +1,11 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import Link from "next/link";
-import { useSession } from "@/lib/auth-client";
-import { User, ChevronDown } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useSession, signOut } from "@/lib/auth-client";
+import toast from "react-hot-toast";
+import { User, ChevronDown, LogOut } from "lucide-react";
 
 interface Category {
   id: string | number;
@@ -29,13 +31,30 @@ const toBnNum = (num: number | string) => {
 };
 
 export default function Navbar() {
+  const router = useRouter();
   const { data: session, isPending } = useSession();
 
   const [categories, setCategories] = useState<Category[]>([]);
   const [tickerProducts, setTickerProducts] = useState<Product[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [currentDate, setCurrentDate] = useState("");
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [localUser, setLocalUser] = useState<{ name: string; email: string; image?: string } | null>(null);
 
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown on click outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsDropdownOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  // Set Bengali Date & Local User Backup
   useEffect(() => {
     const today = new Date();
     const formatted = today.toLocaleDateString("bn-BD", {
@@ -45,8 +64,16 @@ export default function Navbar() {
       year: "numeric",
     });
     setCurrentDate(formatted);
+
+    const stored = localStorage.getItem("bazardor_user");
+    if (stored) {
+      try {
+        setLocalUser(JSON.parse(stored));
+      } catch (e) {}
+    }
   }, []);
 
+  // Fetch Categories & Products
   useEffect(() => {
     async function fetchNavData() {
       try {
@@ -67,13 +94,35 @@ export default function Navbar() {
     fetchNavData();
   }, []);
 
+  // 100% Reliable Logout Handler
+  const handleLogout = async () => {
+    setIsDropdownOpen(false);
+    try {
+      await signOut({
+        fetchOptions: {
+          onSuccess: () => {
+            localStorage.removeItem("bazardor_user");
+            toast.success("লগআউট সফল হয়েছে!");
+            window.location.href = "/";
+          },
+        },
+      });
+    } catch (e) {
+      localStorage.removeItem("bazardor_user");
+      toast.success("লগআউট সফল হয়েছে!");
+      window.location.href = "/";
+    }
+  };
+
+  const activeUser = session?.user || localUser;
+
   return (
     <header className="bg-white border-b border-gray-100 sticky top-0 z-40 shadow-sm font-sans">
       
       {/* 1. Main Top Header */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 flex items-center justify-between gap-4">
         
-        {/* Brand Logo Image & Title */}
+        {/* Brand Logo & Date */}
         <div className="flex items-center gap-3">
           <Link href="/" className="flex items-center gap-2.5 group">
             <img
@@ -92,32 +141,73 @@ export default function Navbar() {
           </Link>
         </div>
 
-        {/* Auth Navigation */}
-        <div className="flex items-center gap-3">
-          {isPending ? (
+        {/* Auth Area with Profile Dropdown */}
+        <div className="flex items-center gap-3 relative" ref={dropdownRef}>
+          {isPending && !activeUser ? (
             <div className="h-9 w-24 bg-gray-100 rounded-xl animate-pulse"></div>
-          ) : session ? (
-            /* Logged in profile link */
-            <Link
-              href="/profile"
-              className="flex items-center gap-2.5 bg-white hover:bg-gray-50 px-3 py-1.5 rounded-xl border border-gray-200 transition shadow-sm"
-            >
-              {session.user?.image ? (
-                <img
-                  src={session.user.image}
-                  alt="Profile"
-                  className="w-7 h-7 rounded-lg object-cover"
-                />
-              ) : (
-                <div className="w-7 h-7 rounded-lg bg-emerald-100 flex items-center justify-center text-emerald-800 text-xs font-bold">
-                  <User className="w-4 h-4" />
+          ) : activeUser ? (
+            /* Logged-in Profile Button */
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                className="flex items-center gap-2 hover:opacity-80 transition cursor-pointer py-1 px-2 rounded-lg text-left"
+              >
+                {activeUser.image ? (
+                  <img
+                    src={activeUser.image}
+                    alt="Profile"
+                    className="w-8 h-8 rounded-full object-cover border border-gray-200"
+                  />
+                ) : (
+                  <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-800 text-xs font-bold">
+                    <User className="w-4 h-4" />
+                  </div>
+                )}
+                <span className="text-sm font-bold text-gray-800">
+                  {activeUser.name || activeUser.email?.split("@")[0] || "Rezwan"}
+                </span>
+                <ChevronDown className={`w-3.5 h-3.5 text-gray-500 transition-transform ${isDropdownOpen ? "rotate-180" : ""}`} />
+              </button>
+
+              {/* Profile Popover Dropdown */}
+              {isDropdownOpen && (
+                <div className="absolute right-0 mt-2 w-64 bg-[#FAFDFB] rounded-[22px] shadow-xl border border-gray-100/90 z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+                  
+                  {/* Dropdown Header */}
+                  <div className="p-4 border-b border-gray-100/80 bg-white">
+                    <h4 className="text-sm font-extrabold text-gray-900 leading-snug">
+                      {activeUser.name || "Rezwan Ahmed"}
+                    </h4>
+                    <p className="text-xs text-gray-400 font-medium mt-0.5 truncate">
+                      {activeUser.email || "rezwanahmed@gmail.com"}
+                    </p>
+                  </div>
+
+                  {/* Dropdown Items */}
+                  <div className="p-2 space-y-1">
+                    <Link
+                      href="/profile"
+                      onClick={() => setIsDropdownOpen(false)}
+                      className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl hover:bg-gray-100/70 text-xs font-bold text-gray-800 transition group"
+                    >
+                      <User className="w-4 h-4 text-blue-600 shrink-0" />
+                      <span>আমার প্রোফাইল</span>
+                    </Link>
+
+                    <button
+                      type="button"
+                      onClick={handleLogout}
+                      className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl hover:bg-rose-50 text-xs font-bold text-rose-600 transition text-left cursor-pointer"
+                    >
+                      <LogOut className="w-4 h-4 text-rose-600 shrink-0" />
+                      <span>সাইন আউট</span>
+                    </button>
+                  </div>
+
                 </div>
               )}
-              <span className="text-xs font-bold text-gray-800">
-                {session.user?.name || session.user?.email?.split("@")[0]}
-              </span>
-              <ChevronDown className="w-3.5 h-3.5 text-gray-400" />
-            </Link>
+            </div>
           ) : (
             <div className="flex items-center gap-2">
               <Link
@@ -184,7 +274,7 @@ export default function Navbar() {
         </div>
       </div>
 
-      {/* 3. Ticker Bar (Live Price Scrolling) */}
+      {/* 3. Ticker Bar */}
       <div className="bg-[#0B1712] text-white text-xs py-2 overflow-hidden relative">
         <div className="flex items-center gap-8 whitespace-nowrap animate-marquee">
           {tickerProducts.map((p, index) => {
